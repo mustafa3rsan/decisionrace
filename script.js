@@ -37,7 +37,7 @@ class Ball {
         this.x = x;
         this.y = y;
         this.radius = 12;
-        this.vx = (Math.random() - 0.5) * 2;
+        this.vx = (Math.random() - 0.5) * 0.5;
         this.vy = 0;
         this.label = label;
         this.isBlack = isBlack;
@@ -122,20 +122,37 @@ class Peg {
     }
 }
 
-// Create pegs in a Plinko-style pattern
+// Create pegs randomly
 function createPegs(laneLeft, laneRight, startY, endY) {
     const pegs = [];
-    const rows = 8;
-    const rowSpacing = (endY - startY) / rows;
+    const numPegs = 25;
     const laneWidth = laneRight - laneLeft;
+    const padding = 15;
 
-    for (let row = 0; row < rows; row++) {
-        const y = startY + row * rowSpacing;
-        const cols = row % 2 === 0 ? 3 : 2;
-        const offset = row % 2 === 0 ? 0 : laneWidth / 6;
+    for (let i = 0; i < numPegs; i++) {
+        let x, y, valid;
+        let attempts = 0;
 
-        for (let col = 0; col < cols; col++) {
-            const x = laneLeft + offset + (col + 0.5) * (laneWidth / cols);
+        // Try to place peg without overlapping
+        do {
+            valid = true;
+            x = laneLeft + padding + Math.random() * (laneWidth - padding * 2);
+            y = startY + Math.random() * (endY - startY);
+
+            // Check distance from other pegs
+            for (const peg of pegs) {
+                const dx = x - peg.x;
+                const dy = y - peg.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 25) {
+                    valid = false;
+                    break;
+                }
+            }
+            attempts++;
+        } while (!valid && attempts < 50);
+
+        if (valid) {
             pegs.push(new Peg(x, y));
         }
     }
@@ -307,3 +324,9 @@ function initialDraw() {
 
 initialDraw();
 startBtn.addEventListener('click', startRace);
+resultDiv.addEventListener('click', () => {
+    resultDiv.classList.add('hidden');
+    startBtn.disabled = false;
+    startBtn.textContent = 'START RACE';
+    initialDraw();
+});
