@@ -6,114 +6,99 @@ const winnerName = document.getElementById('winnerName');
 const option1Input = document.getElementById('option1');
 const option2Input = document.getElementById('option2');
 
-// Canvas boyutlarını ayarla
+// Canvas setup
 function resizeCanvas() {
     const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width * 2;
     canvas.height = rect.height * 2;
     ctx.scale(2, 2);
 }
-
 resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
+window.addEventListener('resize', () => {
+    resizeCanvas();
+    if (!isRacing) initialDraw();
+});
 
-// Fizik sabitleri
-const GRAVITY = 0.4;
-const FRICTION = 0.99;
-const BOUNCE = 0.7;
+// Physics constants
+const GRAVITY = 0.35;
+const BOUNCE = 0.65;
+const FRICTION = 0.98;
 
-// Oyun durumu
+// Game state
 let balls = [];
-let obstacles = [];
+let pegs = [];
 let isRacing = false;
 let winner = null;
 let animationId = null;
 
-// Top sınıfı
+// Ball class
 class Ball {
-    constructor(x, y, color, name, lane) {
+    constructor(x, y, label, isBlack) {
         this.x = x;
         this.y = y;
-        this.radius = 15;
-        this.color = color;
-        this.name = name;
-        this.lane = lane;
+        this.radius = 12;
         this.vx = (Math.random() - 0.5) * 2;
         this.vy = 0;
+        this.label = label;
+        this.isBlack = isBlack;
     }
 
-    update(canvasWidth, canvasHeight, laneWidth, laneStart) {
-        // Yerçekimi
+    update(laneLeft, laneRight) {
+        // Gravity
         this.vy += GRAVITY;
 
-        // Sürtünme
+        // Friction
         this.vx *= FRICTION;
-        this.vy *= FRICTION;
 
-        // Pozisyon güncelle
+        // Update position
         this.x += this.vx;
         this.y += this.vy;
 
-        // Koridor sınırları
-        const leftBound = laneStart + this.radius;
-        const rightBound = laneStart + laneWidth - this.radius;
-
-        if (this.x < leftBound) {
-            this.x = leftBound;
-            this.vx = -this.vx * BOUNCE;
+        // Lane boundaries
+        if (this.x - this.radius < laneLeft) {
+            this.x = laneLeft + this.radius;
+            this.vx = Math.abs(this.vx) * BOUNCE;
         }
-        if (this.x > rightBound) {
-            this.x = rightBound;
-            this.vx = -this.vx * BOUNCE;
-        }
-
-        // Üst sınır
-        if (this.y < this.radius) {
-            this.y = this.radius;
-            this.vy = -this.vy * BOUNCE;
+        if (this.x + this.radius > laneRight) {
+            this.x = laneRight - this.radius;
+            this.vx = -Math.abs(this.vx) * BOUNCE;
         }
     }
 
     draw() {
-        // Gölge
-        ctx.beginPath();
-        ctx.arc(this.x + 3, this.y + 3, this.radius, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-        ctx.fill();
-
-        // Top
+        // Ball
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fillStyle = this.color;
+        ctx.fillStyle = this.isBlack ? '#000' : '#fff';
         ctx.fill();
-
-        // Parlama efekti
-        ctx.beginPath();
-        ctx.arc(this.x - 4, this.y - 4, 5, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.fill();
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
     }
 
-    checkCollision(obstacle) {
-        const dx = this.x - obstacle.x;
-        const dy = this.y - obstacle.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+    collideWithPeg(peg) {
+        const dx = this.x - peg.x;
+        const dy = this.y - peg.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const minDist = this.radius + peg.radius;
 
-        if (distance < this.radius + obstacle.radius) {
-            // Çarpışma açısı
-            const angle = Math.atan2(dy, dx);
-            const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+        if (dist < minDist) {
+            // Collision normal
+            const nx = dx / dist;
+            const ny = dy / dist;
 
-            // Rastgele sapma ekle
-            const randomAngle = angle + (Math.random() - 0.5) * 0.5;
+            // Separate balls
+            const overlap = minDist - dist;
+            this.x += nx * overlap;
+            this.y += ny * overlap;
 
-            this.vx = Math.cos(randomAngle) * speed * BOUNCE;
-            this.vy = Math.sin(randomAngle) * speed * BOUNCE;
+            // Reflect velocity
+            const dotProduct = this.vx * nx + this.vy * ny;
+            this.vx = (this.vx - 2 * dotProduct * nx) * BOUNCE;
+            this.vy = (this.vy - 2 * dotProduct * ny) * BOUNCE;
 
-            // Çakışmayı önle
-            const overlap = this.radius + obstacle.radius - distance;
-            this.x += Math.cos(angle) * overlap;
-            this.y += Math.sin(angle) * overlap;
+            // Add randomness
+            this.vx += (Math.random() - 0.5) * 1.5;
 
             return true;
         }
@@ -121,160 +106,165 @@ class Ball {
     }
 }
 
-// Engel sınıfı
-class Obstacle {
-    constructor(x, y, radius) {
+// Peg class
+class Peg {
+    constructor(x, y) {
         this.x = x;
         this.y = y;
-        this.radius = radius;
+        this.radius = 6;
     }
 
     draw() {
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fillStyle = '#ddd';
+        ctx.fillStyle = '#000';
         ctx.fill();
-        ctx.strokeStyle = '#ccc';
-        ctx.lineWidth = 2;
-        ctx.stroke();
     }
 }
 
-// Engelleri oluştur
-function createObstacles(laneStart, laneWidth, canvasHeight) {
-    const obstacles = [];
+// Create pegs in a Plinko-style pattern
+function createPegs(laneLeft, laneRight, startY, endY) {
+    const pegs = [];
     const rows = 8;
-    const startY = 80;
-    const endY = canvasHeight - 80;
-    const rowHeight = (endY - startY) / rows;
+    const rowSpacing = (endY - startY) / rows;
+    const laneWidth = laneRight - laneLeft;
 
     for (let row = 0; row < rows; row++) {
-        const y = startY + row * rowHeight + rowHeight / 2;
-        const numObstacles = 2 + Math.floor(Math.random() * 2);
+        const y = startY + row * rowSpacing;
+        const cols = row % 2 === 0 ? 3 : 2;
+        const offset = row % 2 === 0 ? 0 : laneWidth / 6;
 
-        for (let i = 0; i < numObstacles; i++) {
-            const x = laneStart + 30 + Math.random() * (laneWidth - 60);
-            const radius = 8 + Math.random() * 6;
-            obstacles.push(new Obstacle(x, y, radius));
+        for (let col = 0; col < cols; col++) {
+            const x = laneLeft + offset + (col + 0.5) * (laneWidth / cols);
+            pegs.push(new Peg(x, y));
         }
     }
 
-    return obstacles;
+    return pegs;
 }
 
-// Oyunu başlat
+// Start race
 function startRace() {
-    const name1 = option1Input.value.trim() || 'Option 1';
-    const name2 = option2Input.value.trim() || 'Option 2';
+    const name1 = option1Input.value.trim() || 'Option A';
+    const name2 = option2Input.value.trim() || 'Option B';
 
-    const canvasWidth = canvas.width / 2;
-    const canvasHeight = canvas.height / 2;
-    const laneWidth = (canvasWidth - 60) / 2;
-    const lane1Start = 20;
-    const lane2Start = canvasWidth / 2 + 10;
+    const w = canvas.width / 2;
+    const h = canvas.height / 2;
+    const laneWidth = (w - 40) / 2;
+    const lane1Left = 15;
+    const lane1Right = lane1Left + laneWidth;
+    const lane2Left = w / 2 + 5;
+    const lane2Right = lane2Left + laneWidth;
 
-    // Topları oluştur
+    // Create balls
     balls = [
-        new Ball(lane1Start + laneWidth / 2, 30, '#4a90d9', name1, 1),
-        new Ball(lane2Start + laneWidth / 2, 30, '#e74c3c', name2, 2)
+        new Ball(lane1Left + laneWidth / 2, 35, name1, true),
+        new Ball(lane2Left + laneWidth / 2, 35, name2, false)
     ];
 
-    // Engelleri oluştur (her koridor için ayrı)
-    obstacles = [
-        ...createObstacles(lane1Start, laneWidth, canvasHeight),
-        ...createObstacles(lane2Start, laneWidth, canvasHeight)
+    // Create pegs
+    pegs = [
+        ...createPegs(lane1Left, lane1Right, 70, h - 80),
+        ...createPegs(lane2Left, lane2Right, 70, h - 80)
     ];
 
-    // Durumu sıfırla
+    // Reset state
     isRacing = true;
     winner = null;
     resultDiv.classList.add('hidden');
     startBtn.disabled = true;
-    startBtn.textContent = 'Race in progress...';
+    startBtn.textContent = 'RACING...';
 
-    // Animasyonu başlat
-    if (animationId) {
-        cancelAnimationFrame(animationId);
-    }
+    if (animationId) cancelAnimationFrame(animationId);
     gameLoop();
 }
 
-// Çizim
+// Draw
 function draw() {
-    const canvasWidth = canvas.width / 2;
-    const canvasHeight = canvas.height / 2;
-    const laneWidth = (canvasWidth - 60) / 2;
-    const lane1Start = 20;
-    const lane2Start = canvasWidth / 2 + 10;
+    const w = canvas.width / 2;
+    const h = canvas.height / 2;
+    const laneWidth = (w - 40) / 2;
+    const lane1Left = 15;
+    const lane1Right = lane1Left + laneWidth;
+    const lane2Left = w / 2 + 5;
+    const lane2Right = lane2Left + laneWidth;
+    const finishY = h - 50;
 
-    // Arka plan
+    // Background
     ctx.fillStyle = '#fafafa';
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    ctx.fillRect(0, 0, w, h);
 
-    // Koridorları çiz
-    ctx.fillStyle = '#f0f0f0';
-    ctx.fillRect(lane1Start, 0, laneWidth, canvasHeight);
-    ctx.fillRect(lane2Start, 0, laneWidth, canvasHeight);
-
-    // Koridor sınırları
-    ctx.strokeStyle = '#e0e0e0';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(lane1Start, 0, laneWidth, canvasHeight);
-    ctx.strokeRect(lane2Start, 0, laneWidth, canvasHeight);
-
-    // Bitiş çizgisi
-    const finishY = canvasHeight - 40;
-    ctx.setLineDash([10, 5]);
-    ctx.strokeStyle = '#333';
+    // Lanes
+    ctx.strokeStyle = '#000';
     ctx.lineWidth = 3;
+
+    // Lane 1
     ctx.beginPath();
-    ctx.moveTo(lane1Start, finishY);
-    ctx.lineTo(lane1Start + laneWidth, finishY);
-    ctx.moveTo(lane2Start, finishY);
-    ctx.lineTo(lane2Start + laneWidth, finishY);
+    ctx.moveTo(lane1Left, 0);
+    ctx.lineTo(lane1Left, h);
+    ctx.moveTo(lane1Right, 0);
+    ctx.lineTo(lane1Right, h);
+    ctx.stroke();
+
+    // Lane 2
+    ctx.beginPath();
+    ctx.moveTo(lane2Left, 0);
+    ctx.lineTo(lane2Left, h);
+    ctx.moveTo(lane2Right, 0);
+    ctx.lineTo(lane2Right, h);
+    ctx.stroke();
+
+    // Finish line
+    ctx.setLineDash([8, 4]);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(lane1Left, finishY);
+    ctx.lineTo(lane1Right, finishY);
+    ctx.moveTo(lane2Left, finishY);
+    ctx.lineTo(lane2Right, finishY);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // "FINISH" yazısı
-    ctx.font = '12px sans-serif';
-    ctx.fillStyle = '#888';
+    // Labels
+    ctx.font = 'bold 11px Space Mono, monospace';
+    ctx.fillStyle = '#000';
     ctx.textAlign = 'center';
-    ctx.fillText('FINISH', lane1Start + laneWidth / 2, finishY + 20);
-    ctx.fillText('FINISH', lane2Start + laneWidth / 2, finishY + 20);
+    ctx.fillText('FINISH', lane1Left + laneWidth / 2, finishY + 15);
+    ctx.fillText('FINISH', lane2Left + laneWidth / 2, finishY + 15);
 
-    // İsimler
-    ctx.font = 'bold 14px sans-serif';
-    ctx.fillStyle = '#4a90d9';
-    ctx.fillText(balls[0]?.name || '', lane1Start + laneWidth / 2, 15);
-    ctx.fillStyle = '#e74c3c';
-    ctx.fillText(balls[1]?.name || '', lane2Start + laneWidth / 2, 15);
+    // Ball labels at top
+    ctx.font = 'bold 12px Space Mono, monospace';
+    if (balls[0]) ctx.fillText(balls[0].label, lane1Left + laneWidth / 2, 18);
+    if (balls[1]) ctx.fillText(balls[1].label, lane2Left + laneWidth / 2, 18);
 
-    // Engeller
-    obstacles.forEach(obstacle => obstacle.draw());
+    // Draw pegs
+    pegs.forEach(peg => peg.draw());
 
-    // Toplar
+    // Draw balls
     balls.forEach(ball => ball.draw());
 }
 
-// Oyun döngüsü
+// Game loop
 function gameLoop() {
-    const canvasWidth = canvas.width / 2;
-    const canvasHeight = canvas.height / 2;
-    const laneWidth = (canvasWidth - 60) / 2;
-    const lane1Start = 20;
-    const lane2Start = canvasWidth / 2 + 10;
-    const finishY = canvasHeight - 40;
+    const w = canvas.width / 2;
+    const h = canvas.height / 2;
+    const laneWidth = (w - 40) / 2;
+    const lane1Left = 15;
+    const lane1Right = lane1Left + laneWidth;
+    const lane2Left = w / 2 + 5;
+    const lane2Right = lane2Left + laneWidth;
+    const finishY = h - 50;
 
-    // Topları güncelle
-    balls[0].update(canvasWidth, canvasHeight, laneWidth, lane1Start);
-    balls[1].update(canvasWidth, canvasHeight, laneWidth, lane2Start);
+    // Update balls
+    balls[0].update(lane1Left, lane1Right);
+    balls[1].update(lane2Left, lane2Right);
 
-    // Engel çarpışmaları
-    obstacles.forEach(obstacle => {
-        balls.forEach(ball => ball.checkCollision(obstacle));
+    // Check peg collisions
+    pegs.forEach(peg => {
+        balls.forEach(ball => ball.collideWithPeg(peg));
     });
 
-    // Kazanan kontrolü
+    // Check winner
     if (!winner) {
         for (const ball of balls) {
             if (ball.y >= finishY) {
@@ -284,38 +274,36 @@ function gameLoop() {
         }
     }
 
-    // Çiz
+    // Draw
     draw();
 
-    // Kazanan varsa
+    // End game
     if (winner) {
         setTimeout(() => {
             isRacing = false;
-            winnerName.textContent = winner.name;
+            winnerName.textContent = winner.label;
             resultDiv.classList.remove('hidden');
             startBtn.disabled = false;
-            startBtn.textContent = 'Race Again';
-        }, 500);
+            startBtn.textContent = 'RACE AGAIN';
+        }, 300);
     } else {
         animationId = requestAnimationFrame(gameLoop);
     }
 }
 
-// Başlangıç çizimi
+// Initial draw
 function initialDraw() {
-    const canvasWidth = canvas.width / 2;
-    const canvasHeight = canvas.height / 2;
+    const w = canvas.width / 2;
+    const h = canvas.height / 2;
 
     ctx.fillStyle = '#fafafa';
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    ctx.fillRect(0, 0, w, h);
 
-    ctx.font = '16px sans-serif';
-    ctx.fillStyle = '#888';
+    ctx.font = '14px Space Mono, monospace';
+    ctx.fillStyle = '#999';
     ctx.textAlign = 'center';
-    ctx.fillText('Click the button to start the race!', canvasWidth / 2, canvasHeight / 2);
+    ctx.fillText('Press START to begin', w / 2, h / 2);
 }
 
 initialDraw();
-
-// Event listener
 startBtn.addEventListener('click', startRace);
